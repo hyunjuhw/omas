@@ -1,0 +1,59 @@
+
+import "hashes/sha256/512bitPacked.zok" as Hash
+
+def checkWeight(field donor_weight, field patient_weight) -> (field):
+	// patient의 몸무게가 donor 몸무게의 0.5배보다 작거나 2배보다 크면 1을 리턴, 그렇지 않은 경우 0을 리턴
+	field result = if donor_weight * 1 / 2 > patient_weight then 1 else 0 fi
+	result = result + if donor_weight * 2 < patient_weight then 1 else 0 fi
+	return result
+	
+
+def checkBloodType(field donor_bloodType, field patient_bloodType) -> (field):
+	// 환자가 AB형일 때는, 기부자 혈액형 상관없이 모두 받을 수 있음. 기부자가 O형일때는 환자의 혈액형이 상관없음
+	// 위의 경우를 제외하고는 기부자가 A형이고 환자가 A형인 경우와, 기부자가 B형이고 환자가 B형인 경우만 확인하면 됌.
+	// A: 10, B: 20, AB: 30, O: 40
+
+	field result = if (patient_bloodType == 30) || (donor_bloodType == 40) || (donor_bloodType == 10 && patient_bloodType == 10) || (donor_bloodType == 20 && patient_bloodType == 20) then 0 else 1 fi
+	return result
+
+
+def MainScore(field patient_emergencyLevel, field donor_area, field patient_area) -> (field):
+	// 순위는 응급도가 최고 등급인 사람이 제일 먼저, 2명 이상일 시 같은 권역에 있는 사람이 우대 되어야함
+	// 최고 응급도 사람이 없으면 같은 권역에 있는 이식대기자 중 응급도가 높은 사람 선정. 
+	// 다른 권역의 높은 응급도’2’ 를 가지고 있는 대기자의 점수가 같은 권역의 응급도 ‘5’를 가진 사람보다 점수가 낮게 나와야함을 의미
+	field score = if patient_emergencyLevel == 1 then 10000 else (1200 / patient_emergencyLevel) fi
+	score = score + if donor_area == patient_area then 5000 else 3000 fi
+	return score
+
+
+def SubScore(field donor_hospitalID, field patient_emergencyLevel, field patient_hospitalID, field patient_donate_exp) -> (field):
+	field score = if (patient_emergencyLevel - 4)*(patient_emergencyLevel - 5) == 0 && donor_hospitalID == patient_hospitalID then 10 else 0 fi
+
+	// patient_donate_exp => direct_family: 4, brother_sister: 3, more_4cousins: 2
+	score = score + patient_donate_exp
+	return score
+
+
+def main(field[2] patient_hash, field donor_hospitalID, field donor_weight, field donor_bloodType, field donor_area, private field patient_hospitalID, private field patient_weight, private field patient_bloodType, private field patient_emergencyLevel, private field patient_area, private field patient_donate_exp) -> (field, field):
+	// hash 증명
+	field[4] patient_info = [patient_hospitalID, patient_weight, patient_bloodType * 10 + patient_emergencyLevel, patient_area * 10 + patient_donate_exp]
+	patient_hash == Hash(patient_info)
+
+	field val = 0
+
+	// 몸무게와 혈액형을 확인. 모두 적합하면 boolVal는 0 하나라도 그렇지 않으면 0보다 큰 값이 도출.
+	val = val + checkWeight(donor_weight, patient_weight)
+	val = val + checkBloodType(donor_bloodType, patient_bloodType)
+	val == 0
+
+	field totalScore = 0
+
+	// 점수의 합은 가장 중요한 MainScore와 MainScore의 점수가 동일한 이식자 발생 시, 선정 기준으로 사용되는 SubScore로 분리
+	totalScore = totalScore + MainScore(patient_emergencyLevel, donor_area, patient_area) + SubScore(donor_hospitalID, patient_emergencyLevel, patient_hospitalID, patient_donate_exp)
+				
+
+	return val, totalScore
+
+	
+
+
